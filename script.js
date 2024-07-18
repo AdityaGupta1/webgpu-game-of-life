@@ -4,12 +4,14 @@ const CELL_PADDING = 0.1;
 
 const canvas = document.querySelector("canvas");
 
-if (!navigator.gpu) {
+if (!navigator.gpu)
+{
     throw new Error("WebGPU not supported on this browser.");
 }
 
 const adapter = await navigator.gpu.requestAdapter();
-if (!adapter) {
+if (!adapter)
+{
     throw new Error("No appropriate GPUAdapter found.");
 }
 
@@ -63,11 +65,40 @@ const cellPaddingUniformBuffer = device.createBuffer({
 });
 device.queue.writeBuffer(cellPaddingUniformBuffer, 0, cellPaddingUniformArray);
 
-const cellShader = device.createShaderModule({
+function createCellStatesStorageBuffer(idx)
+{
+    return device.createBuffer({
+        label: "cell states " + idx,
+        size: cellStatesStorageArray.byteLength,
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    })
+}
+
+const cellStatesStorageArray = new Uint32Array(GRID_SIZE_X * GRID_SIZE_Y);
+const cellStatesStorageBuffers = [
+    createCellStatesStorageBuffer(0),
+    createCellStatesStorageBuffer(1)
+];
+
+for (let i = 0; i < cellStatesStorageArray.length; i += 3)
+{
+    cellStatesStorageArray[i] = 1;
+}
+device.queue.writeBuffer(cellStatesStorageBuffers[0], 0, cellStatesStorageArray);
+
+for (let i = 0; i < cellStatesStorageArray.length; ++i)
+{
+    cellStatesStorageArray[i] = i % 2;
+}
+device.queue.writeBuffer(cellStatesStorageBuffers[1], 0, cellStatesStorageArray);
+
+const cellShaderModule = device.createShaderModule({
     label: "cell shader",
     code: `
 @group(0) @binding(0) var<uniform> gridSize: vec2u;
 @group(0) @binding(1) var<uniform> cellPadding: f32;
+
+@group(1) @binding(0) var<storage> cellStates: array<u32>;
 
 struct VertexInput {
     @location(0) pos: vec2f,
@@ -87,8 +118,10 @@ fn vertMain(in: VertexInput) -> VertexOutput {
     var vertPos = ((vec2f(cellGridPos) + in.pos) * inverseGridSize) * 2 - 1;
     vertPos *= 1 - 2 * (cellPadding * inverseGridSize);
 
+    let cellState = f32(cellStates[in.instanceIdx]);
+
     var out: VertexOutput;
-    out.pos = vec4(vertPos, 0, 1);
+    out.pos = vec4(vertPos * cellState, 0, 1);
     out.cellGridPos = cellGridPos;
     return out;
 }
@@ -117,12 +150,12 @@ const cellPipeline = device.createRenderPipeline({
     label: "cell pipeline",
     layout: "auto",
     vertex: {
-        module: cellShader,
+        module: cellShaderModule,
         entryPoint: "vertMain",
         buffers: [vertexBufferLayout]
     },
     fragment: {
-        module: cellShader,
+        module: cellShaderModule,
         entryPoint: "fragMain",
         targets: [{
             format: canvasFormat
@@ -130,8 +163,8 @@ const cellPipeline = device.createRenderPipeline({
     }
 });
 
-const cellBindGroup = device.createBindGroup({
-    label: "cell renderer bind group",
+const gridUniformsBindGroup = device.createBindGroup({
+    label: "grid uniforms bind group",
     layout: cellPipeline.getBindGroupLayout(0),
     entries: [
         {
@@ -145,26 +178,56 @@ const cellBindGroup = device.createBindGroup({
     ],
 });
 
-const encoder = device.createCommandEncoder();
+function createCellStatesBindGroup(idx)
+{
+    return device.createBindGroup({
+        label: "cell states bind group " + idx,
+        layout: cellPipeline.getBindGroupLayout(1),
+        entries: [
+            {
+                binding: 0,
+                resource: { buffer: cellStatesStorageBuffers[idx] }
+            }
+        ]
+    })
+}
 
-const pass = encoder.beginRenderPass({
-    colorAttachments: [{
-        view: context.getCurrentTexture().createView(),
-        loadOp: "clear",
-        clearValue: [0, 0, 0, 1],
-        storeOp: "store",
-    }]
-});
+const cellStatesBindGroups = [
+    createCellStatesBindGroup(0),
+    createCellStatesBindGroup(1)
+];
 
-pass.setPipeline(cellPipeline);
-pass.setVertexBuffer(0, vertexBuffer);
+const UPDATE_INTERVAL = 250;
+let step = 0;
 
-pass.setBindGroup(0, cellBindGroup);
+function draw()
+{
+    ++step;
 
-pass.draw(vertices.length / 2, GRID_SIZE_X * GRID_SIZE_Y);
+    const encoder = device.createCommandEncoder();
 
-pass.end();
+    const pass = encoder.beginRenderPass({
+        colorAttachments: [{
+            view: context.getCurrentTexture().createView(),
+            loadOp: "clear",
+            clearValue: [0, 0, 0, 1],
+            storeOp: "store",
+        }]
+    });
 
-const commandBuffer = encoder.finish();
+    pass.setPipeline(cellPipeline);
+    pass.setVertexBuffer(0, vertexBuffer);
 
-device.queue.submit([commandBuffer]);
+    pass.setBindGroup(0, gridUniformsBindGroup);
+    pass.setBindGroup(1, cellStatesBindGroups[step % 2]);
+
+    pass.draw(vertices.length / 2, GRID_SIZE_X * GRID_SIZE_Y);
+
+    pass.end();
+
+    const commandBuffer = encoder.finish();
+
+    device.queue.submit([commandBuffer]);
+}
+
+setInterval(draw, UPDATE_INTERVAL);
