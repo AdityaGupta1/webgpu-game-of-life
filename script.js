@@ -1,5 +1,5 @@
-const GRID_SIZE_X = 33;
-const GRID_SIZE_Y = 33;
+const GRID_SIZE_X = 512;
+const GRID_SIZE_Y = 512;
 const CELL_PADDING = 0.1;
 
 const canvas = document.querySelector("canvas");
@@ -86,11 +86,6 @@ for (let i = 0; i < cellStatesStorageArray.length; ++i)
 {
     cellStatesStorageArray[i] = Math.random() > 0.6 ? 1 : 0;
 }
-// cellStatesStorageArray[0] = 1;
-// cellStatesStorageArray[1] = 1;
-// cellStatesStorageArray[2] = 1;
-// cellStatesStorageArray[GRID_SIZE_X + 2] = 1;
-// cellStatesStorageArray[2 * GRID_SIZE_X + 1] = 1;
 device.queue.writeBuffer(cellStatesStorageBuffers[0], 0, cellStatesStorageArray);
 
 const cellShaderModule = device.createShaderModule({
@@ -327,7 +322,7 @@ function draw()
 {
     const encoder = device.createCommandEncoder();
 
-    // run render pass first so the initial state gets rendered as well (rather than starting rendering after the first step of simulation) 
+    // run render pass first so the initial state gets rendered as well (rather than starting rendering after the first step of simulation)
     const renderPass = encoder.beginRenderPass({
         colorAttachments: [
             {
