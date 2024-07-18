@@ -1,5 +1,5 @@
-const GRID_SIZE_X = 32;
-const GRID_SIZE_Y = 32;
+const GRID_SIZE_X = 33;
+const GRID_SIZE_Y = 33;
 const CELL_PADDING = 0.1;
 
 const canvas = document.querySelector("canvas");
@@ -86,6 +86,11 @@ for (let i = 0; i < cellStatesStorageArray.length; ++i)
 {
     cellStatesStorageArray[i] = Math.random() > 0.6 ? 1 : 0;
 }
+// cellStatesStorageArray[0] = 1;
+// cellStatesStorageArray[1] = 1;
+// cellStatesStorageArray[2] = 1;
+// cellStatesStorageArray[GRID_SIZE_X + 2] = 1;
+// cellStatesStorageArray[2 * GRID_SIZE_X + 1] = 1;
 device.queue.writeBuffer(cellStatesStorageBuffers[0], 0, cellStatesStorageArray);
 
 const cellShaderModule = device.createShaderModule({
@@ -164,8 +169,8 @@ fn cellGridPosToIdx(cellGridPos: vec2u) -> u32
     return (cellGridPos.y % gridSize.y) * gridSize.x + (cellGridPos.x % gridSize.x);
 }
 
-fn isCellActive(x: u32, y: u32) -> u32 {
-    return inCellStates[cellGridPosToIdx(vec2u(x, y))];
+fn isCellActive(cellGridPos: vec2u, dx: i32, dy: i32) -> u32 {
+    return inCellStates[cellGridPosToIdx(cellGridPos + vec2u(u32(dx), u32(dy)) + gridSize)]; // add gridSize to compensate for underflow
 }
 
 @compute
@@ -177,14 +182,14 @@ fn computeMain(@builtin(global_invocation_id) cellGridPos: vec3u)
         return;
     }
 
-    let numActiveNeighbors = isCellActive(cellGridPos.x + 1, cellGridPos.y)
-                           + isCellActive(cellGridPos.x + 1, cellGridPos.y + 1)
-                           + isCellActive(cellGridPos.x, cellGridPos.y + 1)
-                           + isCellActive(cellGridPos.x - 1, cellGridPos.y + 1)
-                           + isCellActive(cellGridPos.x - 1, cellGridPos.y)
-                           + isCellActive(cellGridPos.x - 1, cellGridPos.y - 1)
-                           + isCellActive(cellGridPos.x, cellGridPos.y - 1)
-                           + isCellActive(cellGridPos.x + 1, cellGridPos.y - 1);
+    let numActiveNeighbors = isCellActive(cellGridPos.xy, -1, -1)
+                           + isCellActive(cellGridPos.xy,  0, -1)
+                           + isCellActive(cellGridPos.xy,  1, -1)
+                           + isCellActive(cellGridPos.xy, -1,  0)
+                           + isCellActive(cellGridPos.xy,  1,  0)
+                           + isCellActive(cellGridPos.xy, -1,  1)
+                           + isCellActive(cellGridPos.xy,  0,  1)
+                           + isCellActive(cellGridPos.xy,  1,  1);
 
     let thisGridIdx = cellGridPosToIdx(cellGridPos.xy);
 
